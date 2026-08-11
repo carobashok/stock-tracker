@@ -242,20 +242,31 @@ if page == "🏠 Dashboard":
         pnl_pct = (pnl / invested * 100) if invested else 0
         total_invested += invested
         total_current += current_val
+        qty  = h['qty']
+        avg  = h['avg_cost']
         rows.append({
             'Stock': stock,
-            'Qty': h['qty'],
-            'Avg Cost': f"₹{h['avg_cost']:,.2f}",
+            'Qty': qty,
+            'Avg Cost': f"₹{avg:,.2f}",
             'CMP': f"₹{cmp:,.2f}",
             'Invested': fmt_inr(invested),
             'Current Value': fmt_inr(current_val),
             'P&L (₹)': fmt_inr(pnl),
             'P&L (%)': f"{pnl_pct:+.2f}%",
-            '25% Target': f"₹{h['avg_cost']*1.25:,.2f}",
-            '50% Target': f"₹{h['avg_cost']*1.50:,.2f}",
-            '100% Target': f"₹{h['avg_cost']*2.00:,.2f}",
             '52W Low': f"₹{float(meta['week_52_low']):,.2f}" if meta.get('week_52_low') else "—",
             '52W High': f"₹{float(meta['week_52_high']):,.2f}" if meta.get('week_52_high') else "—",
+            # Per share price targets
+            '25% Price': f"₹{avg*1.25:,.2f}",
+            '50% Price': f"₹{avg*1.50:,.2f}",
+            '100% Price': f"₹{avg*2.00:,.2f}",
+            # Total portfolio value at each target
+            '25% Value': fmt_inr(avg * 1.25 * qty),
+            '50% Value': fmt_inr(avg * 1.50 * qty),
+            '100% Value': fmt_inr(avg * 2.00 * qty),
+            # Gain amount at each target
+            '25% Gain': fmt_inr(avg * 0.25 * qty),
+            '50% Gain': fmt_inr(avg * 0.50 * qty),
+            '100% Gain': fmt_inr(avg * 1.00 * qty),
         })
 
     total_pnl = total_current - total_invested
@@ -473,20 +484,31 @@ elif page == "💼 Holdings":
         current_val = h['qty'] * cmp
         pnl = current_val - h['total_cost']
         pnl_pct = (pnl / h['total_cost'] * 100) if h['total_cost'] else 0
+        qty = h['qty']
+        avg  = h['avg_cost']
         rows.append({
             'Stock': stock,
-            'Qty': h['qty'],
-            'Avg Cost (₹)': round(h['avg_cost'], 2),
+            'Qty': qty,
+            'Avg Cost (₹)': round(avg, 2),
             'CMP (₹)': round(cmp, 2),
-            'Purchase Cost (₹)': round(h['total_cost'], 2),
+            'Invested (₹)': round(h['total_cost'], 2),
             'Current Value (₹)': round(current_val, 2),
             'P&L (₹)': round(pnl, 2),
             'P&L (%)': round(pnl_pct, 2),
             '52W Low': round(float(meta['week_52_low']), 2) if meta.get('week_52_low') else None,
             '52W High': round(float(meta['week_52_high']), 2) if meta.get('week_52_high') else None,
-            '25% Target (₹)': round(h['avg_cost'] * 1.25, 2),
-            '50% Target (₹)': round(h['avg_cost'] * 1.50, 2),
-            '100% Target (₹)': round(h['avg_cost'] * 2.00, 2),
+            # Per share targets
+            '25% Price (₹)': round(avg * 1.25, 2),
+            '50% Price (₹)': round(avg * 1.50, 2),
+            '100% Price (₹)': round(avg * 2.00, 2),
+            # Total value targets
+            '25% Value (₹)': round(avg * 1.25 * qty, 2),
+            '50% Value (₹)': round(avg * 1.50 * qty, 2),
+            '100% Value (₹)': round(avg * 2.00 * qty, 2),
+            # Gain at each target
+            '25% Gain (₹)': round(avg * 0.25 * qty, 2),
+            '50% Gain (₹)': round(avg * 0.50 * qty, 2),
+            '100% Gain (₹)': round(avg * 1.00 * qty, 2),
         })
     st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
 
