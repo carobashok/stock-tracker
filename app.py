@@ -334,18 +334,29 @@ elif page == "📋 Transactions":
     if sel_year != 'All': filtered = filtered[filtered['date'].dt.year == int(sel_year)]
     filtered = filtered.sort_values('date', ascending=False)
 
-    display_cols = ['date', 'stock', 'exchange', 'action', 'qty', 'price',
-                    'trade_value', 'stt', 'stamp_duty', 'brokerage',
-                    'total_charges', 'landed_cost', 'effective_unit_price', 'notes']
-    display_cols = [c for c in display_cols if c in filtered.columns]
-    display = filtered[display_cols].copy()
-    display['date'] = display['date'].dt.strftime('%d-%b-%Y')
+    # Build clean display dataframe with readable columns
+    display = pd.DataFrame({
+        'Date': filtered['date'].dt.strftime('%d-%b-%Y'),
+        'Stock': filtered['stock'],
+        'Exch': filtered['exchange'] if 'exchange' in filtered.columns else 'NSE',
+        'Action': filtered['action'],
+        'Qty': filtered['qty'],
+        'Price (₹)': filtered['price'].apply(lambda x: f"₹{float(x):,.2f}"),
+        'Trade Value (₹)': filtered['trade_value'].apply(lambda x: f"₹{float(x):,.2f}"),
+        'STT (₹)': filtered['stt'].apply(lambda x: f"₹{float(x):,.2f}"),
+        'Stamp Duty (₹)': filtered['stamp_duty'].apply(lambda x: f"₹{float(x):,.2f}"),
+        'Brokerage (₹)': filtered['brokerage'].apply(lambda x: f"₹{float(x):,.2f}"),
+        'Total Charges (₹)': filtered['total_charges'].apply(lambda x: f"₹{float(x):,.2f}"),
+        'Landed Cost (₹)': filtered['landed_cost'].apply(lambda x: f"₹{float(x):,.2f}"),
+        'Eff. Price (₹)': filtered['effective_unit_price'].apply(lambda x: f"₹{float(x):,.2f}"),
+        'Notes': filtered['notes'] if 'notes' in filtered.columns else '',
+    })
 
     def highlight_action(row):
-        if row.get('action') == 'BUY':
-            return ['background-color: #f0fdf4'] * len(row)
-        elif row.get('action') == 'SELL':
-            return ['background-color: #fff1f2'] * len(row)
+        if row.get('Action') == 'BUY':
+            return ['background-color: #f0fdf4; color:#166534'] * len(row)
+        elif row.get('Action') == 'SELL':
+            return ['background-color: #fff1f2; color:#dc2626'] * len(row)
         return [''] * len(row)
 
     st.dataframe(display.style.apply(highlight_action, axis=1), use_container_width=True, hide_index=True)
@@ -486,7 +497,7 @@ elif page == "🧾 Tax Summary":
             return ''
 
         st.dataframe(
-            display_lots.style.applymap(color_type, subset=['Type']).applymap(color_gain, subset=['Gain/Loss (₹)']),
+            display_lots.style.map(color_type, subset=['Type']).map(color_gain, subset=['Gain/Loss (₹)']),
             use_container_width=True, hide_index=True
         )
 
