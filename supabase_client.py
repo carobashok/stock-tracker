@@ -1,5 +1,5 @@
 import os
-from supabase import create_client, Client
+from supabase import create_client, Client, ClientOptions
 import streamlit as st
 
 @st.cache_resource
@@ -7,14 +7,12 @@ def get_supabase_client() -> Client:
     url = None
     key = None
 
-    # Try [supabase] section first
     try:
         url = st.secrets["supabase"]["url"]
         key = st.secrets["supabase"]["key"]
     except Exception:
         pass
 
-    # Try flat keys
     if not url:
         try:
             url = st.secrets["SUPABASE_URL"]
@@ -22,21 +20,18 @@ def get_supabase_client() -> Client:
         except Exception:
             pass
 
-    # Try environment variables
     if not url:
         url = os.environ.get("SUPABASE_URL")
         key = os.environ.get("SUPABASE_KEY")
 
     if not url or not key:
-        st.error("❌ Supabase credentials not found. Please check your secrets.toml or Streamlit Cloud secrets.")
-        st.info("""
-**Expected format in Streamlit Cloud secrets:**
-```toml
-[supabase]
-url = "https://your-project.supabase.co"
-key = "your-anon-key"
-```
-""")
+        st.error("❌ Supabase credentials not found. Check your secrets.")
         st.stop()
 
-    return create_client(url, key)
+    # Set schema at client level - most reliable approach
+    client = create_client(
+        url, 
+        key,
+        options=ClientOptions(schema="portfolio")
+    )
+    return client

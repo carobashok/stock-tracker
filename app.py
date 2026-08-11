@@ -85,13 +85,13 @@ def calculate_charges(action, qty, price, brokerage_per_order=20.0):
 @st.cache_data(ttl=60)
 def fetch_transactions():
     db = get_supabase_client()
-    res = db.schema('portfolio').table('transactions').select('*').order('date', desc=True).execute()
+    res = db.table('transactions').select('*').order('date', desc=True).execute()
     return res.data or []
 
 @st.cache_data(ttl=60)
 def fetch_holdings_meta():
     db = get_supabase_client()
-    res = db.schema('portfolio').table('holdings').select('*').execute()
+    res = db.table('holdings').select('*').execute()
     return {r['stock']: r for r in (res.data or [])}
 
 def invalidate_cache():
@@ -146,14 +146,14 @@ if page == "🏠 Dashboard":
                     key=f"cmp_{stock}"
                 )
                 if st.button("Update", key=f"upd_{stock}"):
-                    existing = db.schema('portfolio').table('holdings').select('id').eq('stock', stock).execute()
+                    existing = db.table('holdings').select('id').eq('stock', stock).execute()
                     if existing.data:
-                        db.schema('portfolio').table('holdings').update({
+                        db.table('holdings').update({
                             'cmp': new_cmp,
                             'cmp_updated_at': datetime.utcnow().isoformat()
                         }).eq('stock', stock).execute()
                     else:
-                        db.schema('portfolio').table('holdings').insert({
+                        db.table('holdings').insert({
                             'stock': stock,
                             'cmp': new_cmp,
                             'cmp_updated_at': datetime.utcnow().isoformat()
@@ -317,12 +317,12 @@ elif page == "➕ Add Transaction":
                         'notes': notes,
                         **charges
                     }
-                    db.schema('portfolio').table('transactions').insert(record).execute()
+                    db.table('transactions').insert(record).execute()
 
                     # ensure holdings meta row exists
-                    existing = db.schema('portfolio').table('holdings').select('id').eq('stock', stock).execute()
+                    existing = db.table('holdings').select('id').eq('stock', stock).execute()
                     if not existing.data:
-                        db.schema('portfolio').table('holdings').insert({
+                        db.table('holdings').insert({
                             'stock': stock,
                             'exchange': exchange,
                         }).execute()
@@ -396,7 +396,7 @@ elif page == "📋 Transactions":
         del_id = st.selectbox("Transaction ID", [r['id'] for r in txns])
         if st.button("Delete", type="secondary"):
             db = get_supabase_client()
-            db.schema('portfolio').table('transactions').delete().eq('id', del_id).execute()
+            db.table('transactions').delete().eq('id', del_id).execute()
             invalidate_cache()
             st.success("Transaction deleted.")
             st.rerun()
@@ -433,9 +433,9 @@ elif page == "💼 Holdings":
                 low = st.number_input("52W Low", value=float(meta.get('week_52_low') or 0), step=0.05, format="%.2f", key=f"low_{stock}")
                 high = st.number_input("52W High", value=float(meta.get('week_52_high') or 0), step=0.05, format="%.2f", key=f"high_{stock}")
                 if st.form_submit_button("Save"):
-                    existing = db.schema('portfolio').table('holdings').select('id').eq('stock', stock).execute()
+                    existing = db.table('holdings').select('id').eq('stock', stock).execute()
                     if existing.data:
-                        db.schema('portfolio').table('holdings').update({
+                        db.table('holdings').update({
                             'week_52_low': low,
                             'week_52_high': high
                         }).eq('stock', stock).execute()
