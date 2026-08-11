@@ -106,6 +106,28 @@ def metric_card(col, label, value, sub=None, sub_class="neutral"):
         {'<div class="metric-sub ' + sub_class + '">' + sub + '</div>' if sub else ''}
     </div>""", unsafe_allow_html=True)
 
+# ── Live Price Fetcher (Yahoo Finance) ───────────────────────────────────────
+def fetch_live_price(symbol: str):
+    """Fetch live price from Yahoo Finance. Tries NSE (.NS) then BSE (.BO)."""
+    import requests as req
+    def _fetch(ticker):
+        try:
+            url = f"https://query1.finance.yahoo.com/v8/finance/chart/{ticker}"
+            resp = req.get(url, timeout=10, headers={"User-Agent": "Mozilla/5.0"})
+            data = resp.json()
+            result = data.get("chart", {}).get("result")
+            if not result: return None
+            meta = result[0]["meta"]
+            price = meta.get("regularMarketPrice")
+            prev  = meta.get("chartPreviousClose")
+            if not price: return None
+            change_pct = ((price - prev) / prev * 100) if prev else 0
+            return {"price": price, "change_pct": round(change_pct, 2), "ticker": ticker}
+        except Exception:
+            return None
+
+    return _fetch(f"{symbol}.NS") or _fetch(f"{symbol}.BO") or None
+
 # ── Data fetchers ─────────────────────────────────────────────────────────────
 @st.cache_data(ttl=60)
 def fetch_transactions():
@@ -153,8 +175,39 @@ if page == "🏠 Dashboard":
         st.info("No open holdings found.")
         st.stop()
 
-    # CMP Update
-    with st.expander("📡 Update Current Market Prices (CMP)", expanded=False):
+    # ── Live CMP Fetch from Yahoo Finance ────────────────────────────────────
+    col_sync, col_info = st.columns([1, 3])
+    with col_sync:
+        if st.button("🔄 Fetch Live Prices", type="primary", use_container_width=True):
+            synced = 0
+            not_found = []
+            with st.spinner("Fetching live prices from Yahoo Finance..."):
+                for stock in holdings.keys():
+                    price_data = fetch_live_price(stock)
+                    if price_data:
+                        payload = {
+                            'cmp': round(price_data['price'], 2),
+                            'cmp_updated_at': datetime.utcnow().isoformat()
+                        }
+                        existing = db_select_eq('holdings', 'stock', stock)
+                        if existing:
+                            db_update('holdings', payload, 'stock', stock)
+                        else:
+                            db_insert('holdings', {'stock': stock, 'exchange': 'NSE', **payload})
+                        synced += 1
+                    else:
+                        not_found.append(stock)
+            invalidate_cache()
+            if synced:
+                st.success(f"✅ Live prices fetched for {synced} stock(s)!")
+            if not_found:
+                st.warning(f"Could not fetch: {', '.join(not_found)} — update manually below.")
+            st.rerun()
+    with col_info:
+        st.caption("Fetches live prices directly from Yahoo Finance (NSE). No manual steps needed.")
+
+    # CMP Update (Manual)
+    with st.expander("📡 Update CMP Manually", expanded=False):
         cols = st.columns(min(len(holdings), 4))
         for i, (stock, h) in enumerate(holdings.items()):
             meta = holdings_meta.get(stock, {})
