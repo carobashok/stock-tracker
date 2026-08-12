@@ -148,7 +148,7 @@ with st.sidebar:
     st.markdown("---")
     page = st.radio(
         "Navigate",
-        ["🏠 Dashboard", "➕ Add Transaction", "📋 Transactions", "💼 Holdings", "🧾 Tax Summary"],
+        ["🏠 Dashboard", "➕ Add Transaction", "📋 Transactions", "💼 Holdings", "🧾 Tax Summary", "🚀 IPO Tracker"],
         label_visibility="collapsed"
     )
     st.markdown("---")
@@ -591,3 +591,217 @@ elif page == "🧾 Tax Summary":
             'Total Tax (₹)': round(s['total_tax'], 2),
         })
     st.dataframe(pd.DataFrame(fy_rows), use_container_width=True, hide_index=True)
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# PAGE: IPO TRACKER
+# ═══════════════════════════════════════════════════════════════════════════════
+elif page == "🚀 IPO Tracker":
+    st.title("🚀 IPO Tracker")
+    st.caption("Track IPO applications → allotment → listing → ongoing transactions")
+
+    tab1, tab2 = st.tabs(["📋 My IPOs", "➕ Add IPO Application"])
+
+    # ── TAB 1: MY IPOs ────────────────────────────────────────────────────────
+    with tab1:
+        ipos = db_select('ipo_tracker', order_by='application_date.desc')
+
+        if not ipos:
+            st.info("No IPO applications yet. Go to 'Add IPO Application' tab to get started.")
+        else:
+            for ipo in ipos:
+                status = ipo.get('status', 'Applied')
+                status_color = {
+                    'Applied': '🟡', 'Allotted': '🟢',
+                    'Not Allotted': '🔴', 'Listed': '🔵'
+                }.get(status, '⚪')
+
+                with st.expander(f"{status_color} {ipo['company_name']} — {status}", expanded=(status == 'Applied')):
+                    col1, col2, col3 = st.columns(3)
+
+                    with col1:
+                        st.markdown("**Application Details**")
+                        st.write(f"Applied: {ipo.get('application_date', '—')}")
+                        st.write(f"Price Band: ₹{ipo.get('issue_price_low', '—')} – ₹{ipo.get('issue_price_high', '—')}")
+                        st.write(f"Lot Size: {ipo.get('lot_size', '—')} shares")
+                        st.write(f"Lots Applied: {ipo.get('lots_applied', '—')}")
+                        total_shares_applied = (ipo.get('lot_size') or 0) * (ipo.get('lots_applied') or 0)
+                        total_amount = total_shares_applied * (ipo.get('issue_price_high') or 0)
+                        st.write(f"Shares Applied: {total_shares_applied}")
+                        st.write(f"Amount Blocked: {fmt_inr(total_amount)}")
+                        st.write(f"UPI Mandate: {ipo.get('upi_mandate_status', '—')}")
+
+                    with col2:
+                        st.markdown("**Allotment Details**")
+                        if status in ['Allotted', 'Listed']:
+                            st.write(f"Allotment Date: {ipo.get('allotment_date', '—')}")
+                            st.write(f"Lots Allotted: {ipo.get('lots_allotted', 0)}")
+                            st.write(f"Shares Allotted: {ipo.get('shares_allotted', 0)}")
+                            st.write(f"Allotment Price: ₹{ipo.get('allotment_price', '—')}")
+                            allotted_cost = (ipo.get('shares_allotted') or 0) * (ipo.get('allotment_price') or 0)
+                            st.write(f"Total Cost: {fmt_inr(allotted_cost)}")
+                        elif status == 'Not Allotted':
+                            st.write("❌ Not allotted — amount refunded")
+                        else:
+                            st.write("⏳ Awaiting allotment result")
+
+                    with col3:
+                        st.markdown("**Listing & P&L**")
+                        if status == 'Listed':
+                            listing_price = ipo.get('listing_price') or 0
+                            allotment_price = ipo.get('allotment_price') or 0
+                            shares = ipo.get('shares_allotted') or 0
+                            listing_gain = (listing_price - allotment_price) * shares
+                            listing_gain_pct = ((listing_price - allotment_price) / allotment_price * 100) if allotment_price else 0
+                            st.write(f"Listing Date: {ipo.get('listing_date', '—')}")
+                            st.write(f"Listing Price: ₹{listing_price:,.2f}")
+                            gain_color = "🟢" if listing_gain >= 0 else "🔴"
+                            st.write(f"Listing Gain: {gain_color} {fmt_inr(listing_gain)} ({listing_gain_pct:+.2f}%)")
+
+                            # Live CMP
+                            symbol = ipo.get('stock_symbol')
+                            if symbol:
+                                price_data = fetch_live_price(symbol)
+                                if price_data:
+                                    cmp = price_data['price']
+                                    current_gain = (cmp - allotment_price) * shares
+                                    current_pct = ((cmp - allotment_price) / allotment_price * 100) if allotment_price else 0
+                                    st.write(f"Current CMP: ₹{cmp:,.2f} ({price_data['change_pct']:+.2f}%)")
+                                    st.write(f"Current Gain: {fmt_inr(current_gain)} ({current_pct:+.2f}%)")
+                        else:
+                            st.write("⏳ Not listed yet")
+
+                    st.markdown("---")
+
+                    # ── Action Buttons ────────────────────────────────────────
+                    action_cols = st.columns(4)
+
+                    # Update Allotment
+                    if status == 'Applied':
+                        with action_cols[0]:
+                            with st.form(key=f"allot_{ipo['id']}"):
+                                st.markdown("**Update Allotment**")
+                                allot_date = st.date_input("Allotment Date", key=f"ad_{ipo['id']}")
+                                lots_got = st.number_input("Lots Allotted", min_value=0, step=1, key=f"la_{ipo['id']}")
+                                allot_price = st.number_input("Allotment Price (₹)", min_value=0.0, step=0.5,
+                                                               value=float(ipo.get('issue_price_high') or 0),
+                                                               key=f"ap_{ipo['id']}")
+                                if st.form_submit_button("Save Allotment"):
+                                    shares_got = lots_got * (ipo.get('lot_size') or 0)
+                                    new_status = 'Allotted' if lots_got > 0 else 'Not Allotted'
+                                    db_update('ipo_tracker', {
+                                        'allotment_date': allot_date.isoformat(),
+                                        'lots_allotted': lots_got,
+                                        'shares_allotted': shares_got,
+                                        'allotment_price': allot_price,
+                                        'status': new_status,
+                                    }, 'id', ipo['id'])
+                                    st.success(f"Allotment updated — {new_status}!")
+                                    st.rerun()
+
+                    # Update Listing
+                    if status == 'Allotted':
+                        with action_cols[1]:
+                            with st.form(key=f"list_{ipo['id']}"):
+                                st.markdown("**Update Listing**")
+                                list_date = st.date_input("Listing Date", key=f"ld_{ipo['id']}")
+                                list_price = st.number_input("Listing Price (₹)", min_value=0.0, step=0.5, key=f"lp_{ipo['id']}")
+                                if st.form_submit_button("Save Listing"):
+                                    db_update('ipo_tracker', {
+                                        'listing_date': list_date.isoformat(),
+                                        'listing_price': list_price,
+                                        'status': 'Listed',
+                                    }, 'id', ipo['id'])
+                                    st.success("Listing details saved!")
+                                    st.rerun()
+
+                    # Push to Transactions
+                    if status in ['Allotted', 'Listed'] and not ipo.get('pushed_to_transactions'):
+                        with action_cols[2]:
+                            st.markdown("**Push to Portfolio**")
+                            if st.button(f"➡️ Add to Transactions", key=f"push_{ipo['id']}"):
+                                shares = ipo.get('shares_allotted') or 0
+                                price = ipo.get('allotment_price') or 0
+                                symbol = ipo.get('stock_symbol') or ipo['company_name']
+                                if shares > 0 and price > 0:
+                                    charges = calculate_charges('BUY', shares, price)
+                                    record = {
+                                        'date': ipo.get('allotment_date') or date.today().isoformat(),
+                                        'stock': symbol.upper(),
+                                        'exchange': ipo.get('exchange', 'NSE'),
+                                        'action': 'BUY',
+                                        'qty': shares,
+                                        'price': price,
+                                        'notes': f"IPO Allotment — {ipo['company_name']}",
+                                        **charges
+                                    }
+                                    db_insert('transactions', record)
+                                    existing = db_select_eq('holdings', 'stock', symbol.upper())
+                                    if not existing:
+                                        db_insert('holdings', {'stock': symbol.upper(), 'exchange': ipo.get('exchange', 'NSE')})
+                                    db_update('ipo_tracker', {'pushed_to_transactions': True}, 'id', ipo['id'])
+                                    invalidate_cache()
+                                    st.success(f"✅ {shares} shares of {symbol} added to your portfolio!")
+                                    st.rerun()
+                                else:
+                                    st.error("Shares or price missing.")
+                    elif ipo.get('pushed_to_transactions'):
+                        with action_cols[2]:
+                            st.success("✅ In Portfolio")
+
+                    # Delete IPO
+                    with action_cols[3]:
+                        st.markdown("**Remove**")
+                        if st.button("🗑️ Delete", key=f"del_ipo_{ipo['id']}"):
+                            db_delete('ipo_tracker', 'id', ipo['id'])
+                            st.success("Deleted.")
+                            st.rerun()
+
+    # ── TAB 2: ADD IPO APPLICATION ────────────────────────────────────────────
+    with tab2:
+        st.subheader("New IPO Application")
+
+        col1, col2 = st.columns(2)
+        with col1:
+            company_name = st.text_input("Company Name", placeholder="e.g. Ola Electric Mobility")
+            stock_symbol = st.text_input("NSE Symbol (if known)", placeholder="e.g. OLAELEC").upper().strip()
+            exchange = st.selectbox("Exchange", ["NSE", "BSE"])
+            application_date = st.date_input("Application Date", value=date.today())
+            upi_status = st.selectbox("UPI Mandate Status", ["Pending", "Approved", "Failed"])
+            notes = st.text_input("Notes", placeholder="e.g. Applied via ICICI Direct")
+
+        with col2:
+            price_low = st.number_input("Price Band Low (₹)", min_value=0.0, step=0.5)
+            price_high = st.number_input("Price Band High (₹)", min_value=0.0, step=0.5)
+            lot_size = st.number_input("Lot Size (shares per lot)", min_value=1, step=1)
+            lots_applied = st.number_input("Lots Applied", min_value=1, step=1, value=1)
+
+            total_shares = lot_size * lots_applied
+            total_amount = total_shares * price_high
+            st.markdown(f"""
+| | |
+|---|---|
+| Total Shares Applied | {total_shares} |
+| Amount Blocked (UPI) | {fmt_inr(total_amount)} |
+""")
+
+        if st.button("✅ Save IPO Application", type="primary", use_container_width=True):
+            if not company_name:
+                st.error("Please enter company name.")
+            else:
+                record = {
+                    'company_name': company_name,
+                    'stock_symbol': stock_symbol or None,
+                    'exchange': exchange,
+                    'issue_price_low': price_low or None,
+                    'issue_price_high': price_high or None,
+                    'lot_size': lot_size,
+                    'lots_applied': lots_applied,
+                    'application_date': application_date.isoformat(),
+                    'upi_mandate_status': upi_status,
+                    'status': 'Applied',
+                    'notes': notes or None,
+                }
+                db_insert('ipo_tracker', record)
+                st.success(f"✅ IPO application for {company_name} saved!")
+                st.balloons()
