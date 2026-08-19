@@ -304,6 +304,81 @@ if page == "🏠 Dashboard":
 elif page == "➕ Add Transaction":
     st.title("➕ Add Transaction")
 
+    # ── Import from ICICI CSV ─────────────────────────────────────────────────
+    with st.expander("📂 Import from ICICI Direct Trade Book CSV", expanded=True):
+        uploaded_csv = st.file_uploader("Upload your tradeBook.csv from ICICI Direct", type=["csv"])
+        if uploaded_csv:
+            import io
+            df_csv = pd.read_csv(uploaded_csv)
+            df_csv.columns = df_csv.columns.str.strip()
+            df_csv['Date'] = pd.to_datetime(df_csv['Date'].str.strip(), format="%d-%b-%Y")
+
+            SYMBOL_MAP = {
+                "JIOFIN":"JIOFIN","DELLIM":"DELHIVERY","LTFINA":"LTF",
+                "SBFFIN":"SBFC","IDFBAN":"IDFCFIRSTB","TATSTE":"TATASTEEL",
+                "ONE97":"PAYTM","ASHLEY":"ASHOKLEY","MAHLO":"MAHLOG","TVSSUP":"TVSSCS"
+            }
+
+            records_to_import = []
+            for _, row in df_csv.iterrows():
+                raw_stock = str(row['Stock']).strip()
+                stock_sym = SYMBOL_MAP.get(raw_stock, raw_stock)
+                action_val = str(row['Action']).strip().upper()
+                qty_val = int(row['Qty'])
+                price_val = float(row['Price'])
+                trade_val = float(row['Trade Value'])
+                stt_val = float(str(row['STT']).strip() or 0)
+                sebi_val = float(str(row['Transaction and SEBI Turnover charges']).strip() or 0)
+                stamp_val = float(str(row['Stamp Duty']).strip() or 0)
+                brok_incl = float(str(row['Brokerage incl. taxes']).strip() or 0)
+                brok_ex_gst = brok_incl / 1.18
+                gst_val = brok_incl - brok_ex_gst
+                total_charges = stt_val + sebi_val + stamp_val + brok_incl
+                landed = trade_val + total_charges if action_val == 'BUY' else trade_val - total_charges
+                eff_price = landed / qty_val
+                records_to_import.append({
+                    'date': row['Date'].date().isoformat(),
+                    'stock': stock_sym,
+                    'exchange': str(row.get('Exchange', 'NSE')).strip(),
+                    'action': action_val,
+                    'qty': qty_val,
+                    'price': round(price_val, 4),
+                    'trade_value': round(trade_val, 4),
+                    'stt': round(stt_val, 4),
+                    'stamp_duty': round(stamp_val, 4),
+                    'brokerage': round(brok_ex_gst, 4),
+                    'gst_on_brokerage': round(gst_val, 4),
+                    'sebi_charges': round(sebi_val, 4),
+                    'total_charges': round(total_charges, 4),
+                    'landed_cost': round(landed, 4),
+                    'effective_unit_price': round(eff_price, 4),
+                    'notes': f"Imported from ICICI Direct | Order: {str(row.get('Order Ref.', '')).strip()}"
+                })
+
+            # Preview
+            preview_df = pd.DataFrame([{
+                'Date': r['date'], 'Stock': r['stock'], 'Action': r['action'],
+                'Qty': r['qty'], 'Price': f"₹{r['price']:,.2f}",
+                'Landed Cost': f"₹{r['landed_cost']:,.2f}",
+                'Eff. Price': f"₹{r['effective_unit_price']:,.2f}"
+            } for r in records_to_import])
+            st.dataframe(preview_df, use_container_width=True, hide_index=True)
+
+            if st.button("✅ Import All Transactions", type="primary"):
+                imported = 0
+                for record in records_to_import:
+                    db_insert('transactions', record)
+                    existing = db_select_eq('holdings', 'stock', record['stock'])
+                    if not existing:
+                        db_insert('holdings', {'stock': record['stock'], 'exchange': record['exchange']})
+                    imported += 1
+                invalidate_cache()
+                st.success(f"✅ {imported} transaction(s) imported successfully!")
+                st.balloons()
+
+    st.markdown("---")
+    st.subheader("Or Enter Manually")
+
     col1, col2 = st.columns([1, 1])
 
     with col1:
