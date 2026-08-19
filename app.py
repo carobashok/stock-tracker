@@ -330,16 +330,10 @@ elif page == "➕ Add Transaction":
                 stt_val = float(str(row['STT']).strip() or 0)
                 sebi_val = float(str(row['Transaction and SEBI Turnover charges']).strip() or 0)
                 stamp_val = float(str(row['Stamp Duty']).strip() or 0)
-                brok_incl = float(str(row['Brokerage incl. taxes']).strip() or 0)
-                # Use 'Brokerage + Service Tax' column if available (more accurate)
-                brok_service_tax = float(str(row.get('Brokerage + Service Tax', '') or '').strip() or 0)
-                if brok_service_tax > 0:
-                    brok_ex_gst = brok_service_tax
-                    gst_val = brok_incl - brok_service_tax
-                else:
-                    brok_ex_gst = brok_incl / 1.18
-                    gst_val = brok_incl - brok_ex_gst
-                total_charges = stt_val + sebi_val + stamp_val + brok_incl
+                # ICICI formula: STT + SEBI + Stamp Duty + (Brokerage + Service Tax)
+                brokerage = float(str(row.get('Brokerage + Service Tax', '') or '').strip() or 0)
+                brokerage_incl = float(str(row['Brokerage incl. taxes']).strip() or 0)
+                total_charges = stt_val + sebi_val + stamp_val + brokerage
                 landed = trade_val + total_charges if action_val == 'BUY' else trade_val - total_charges
                 eff_price = landed / qty_val
                 records_to_import.append({
@@ -352,8 +346,8 @@ elif page == "➕ Add Transaction":
                     'trade_value': round(trade_val, 4),
                     'stt': round(stt_val, 4),
                     'stamp_duty': round(stamp_val, 4),
-                    'brokerage': round(brok_ex_gst, 4),
-                    'gst_on_brokerage': round(gst_val, 4),
+                    'brokerage': round(brokerage, 4),
+                    'gst_on_brokerage': round(brokerage_incl - brokerage, 4),
                     'sebi_charges': round(sebi_val, 4),
                     'total_charges': round(total_charges, 4),
                     'landed_cost': round(landed, 4),
