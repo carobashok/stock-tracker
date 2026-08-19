@@ -331,8 +331,14 @@ elif page == "➕ Add Transaction":
                 sebi_val = float(str(row['Transaction and SEBI Turnover charges']).strip() or 0)
                 stamp_val = float(str(row['Stamp Duty']).strip() or 0)
                 brok_incl = float(str(row['Brokerage incl. taxes']).strip() or 0)
-                brok_ex_gst = brok_incl / 1.18
-                gst_val = brok_incl - brok_ex_gst
+                # Use 'Brokerage + Service Tax' column if available (more accurate)
+                brok_service_tax = float(str(row.get('Brokerage + Service Tax', '') or '').strip() or 0)
+                if brok_service_tax > 0:
+                    brok_ex_gst = brok_service_tax
+                    gst_val = brok_incl - brok_service_tax
+                else:
+                    brok_ex_gst = brok_incl / 1.18
+                    gst_val = brok_incl - brok_ex_gst
                 total_charges = stt_val + sebi_val + stamp_val + brok_incl
                 landed = trade_val + total_charges if action_val == 'BUY' else trade_val - total_charges
                 eff_price = landed / qty_val
