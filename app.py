@@ -530,26 +530,6 @@ elif page == "💼 Holdings":
         st.info("No open holdings.")
         st.stop()
 
-    st.subheader("Update 52-Week Range")
-    cols = st.columns(min(len(holdings), 3))
-    for i, stock in enumerate(holdings):
-        meta = holdings_meta.get(stock, {})
-        with cols[i % 3]:
-            with st.form(key=f"form_52w_{stock}"):
-                st.markdown(f"**{stock}**")
-                low = st.number_input("52W Low", value=float(meta.get('week_52_low') or 0), step=0.05, format="%.2f")
-                high = st.number_input("52W High", value=float(meta.get('week_52_high') or 0), step=0.05, format="%.2f")
-                if st.form_submit_button("Save"):
-                    existing = db_select_eq('holdings', 'stock', stock)
-                    if existing:
-                        db_update('holdings', {'week_52_low': low, 'week_52_high': high}, 'stock', stock)
-                    else:
-                        db_insert('holdings', {'stock': stock, 'week_52_low': low, 'week_52_high': high})
-                    invalidate_cache()
-                    st.success(f"Saved for {stock}")
-                    st.rerun()
-
-    st.markdown("---")
     st.subheader("Holdings Summary")
     holdings_meta = fetch_holdings_meta()
     rows = []
@@ -658,6 +638,28 @@ elif page == "💼 Holdings":
             hide_index=True
         )
         st.markdown("")
+
+    # ── 52-Week Range Update (bottom) ─────────────────────────────────────────
+    st.markdown("---")
+    with st.expander("📊 Update 52-Week Low / High", expanded=False):
+        cols = st.columns(min(len(holdings), 3))
+        holdings_meta3 = fetch_holdings_meta()
+        for i, stock in enumerate(holdings):
+            meta = holdings_meta3.get(stock, {})
+            with cols[i % 3]:
+                with st.form(key=f"form_52w_{stock}"):
+                    st.markdown(f"**{stock}**")
+                    low = st.number_input("52W Low", value=float(meta.get('week_52_low') or 0), step=0.05, format="%.2f")
+                    high = st.number_input("52W High", value=float(meta.get('week_52_high') or 0), step=0.05, format="%.2f")
+                    if st.form_submit_button("Save"):
+                        existing = db_select_eq('holdings', 'stock', stock)
+                        if existing:
+                            db_update('holdings', {'week_52_low': low, 'week_52_high': high}, 'stock', stock)
+                        else:
+                            db_insert('holdings', {'stock': stock, 'week_52_low': low, 'week_52_high': high})
+                        invalidate_cache()
+                        st.success(f"Saved for {stock}")
+                        st.rerun()
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # PAGE: TAX SUMMARY
