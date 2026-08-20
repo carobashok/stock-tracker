@@ -587,6 +587,78 @@ elif page == "💼 Holdings":
         })
     st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
 
+    # ── Holding Period Analysis ───────────────────────────────────────────────
+    st.markdown("---")
+    st.subheader("📅 Holding Period Analysis")
+    st.caption("Shows each buy lot — days held and STCG/LTCG status if sold today")
+
+    today = date.today()
+    holdings_meta2 = fetch_holdings_meta()
+
+    for stock, h in holdings.items():
+        meta = holdings_meta2.get(stock, {})
+        cmp = float(meta.get('cmp') or h['avg_cost'])
+
+        # Count LTCG and STCG qty
+        ltcg_qty = sum(lot['qty'] for lot in h['lots'] if (today - lot['date']).days > 365)
+        stcg_qty = sum(lot['qty'] for lot in h['lots'] if (today - lot['date']).days <= 365)
+        ltcg_val = ltcg_qty * cmp
+        stcg_val = stcg_qty * cmp
+
+        # Header
+        col_h1, col_h2, col_h3 = st.columns([2, 1, 1])
+        with col_h1:
+            st.markdown(f"#### {stock}")
+        with col_h2:
+            st.markdown(f"🟢 **LTCG: {ltcg_qty} shares** ({fmt_inr(ltcg_val)})")
+        with col_h3:
+            st.markdown(f"🔴 **STCG: {stcg_qty} shares** ({fmt_inr(stcg_val)})")
+
+        # Lot-wise table
+        lot_rows = []
+        for lot in h['lots']:
+            days_held = (today - lot['date']).days
+            is_ltcg = days_held > 365
+            ltcg_date = date(lot['date'].year + 1, lot['date'].month, lot['date'].day)
+            gain_type = '🟢 LTCG' if is_ltcg else '🔴 STCG'
+            current_val = lot['qty'] * cmp
+            cost = lot['qty'] * lot['landed_cost_per_unit']
+            pnl = current_val - cost
+
+            lot_rows.append({
+                'Buy Date': lot['date'].strftime('%d-%b-%Y'),
+                'Qty': lot['qty'],
+                'Cost/Share (₹)': round(lot['landed_cost_per_unit'], 2),
+                'Days Held': days_held,
+                'Status': gain_type,
+                'LTCG From': ltcg_date.strftime('%d-%b-%Y') if not is_ltcg else '✅ Already LTCG',
+                'Current Value (₹)': round(current_val, 2),
+                'Unrealised P&L (₹)': round(pnl, 2),
+            })
+
+        lot_df = pd.DataFrame(lot_rows)
+
+        def color_status(val):
+            if 'LTCG' in str(val) and '🟢' in str(val):
+                return 'background-color: #dcfce7; color: #166534; font-weight:600'
+            if 'STCG' in str(val):
+                return 'background-color: #fef3c7; color: #92400e; font-weight:600'
+            return ''
+
+        def color_pnl(val):
+            if isinstance(val, (int, float)):
+                return f"color: {'#16a34a' if val >= 0 else '#dc2626'}; font-weight:600"
+            return ''
+
+        st.dataframe(
+            lot_df.style
+                .map(color_status, subset=['Status'])
+                .map(color_pnl, subset=['Unrealised P&L (₹)']),
+            use_container_width=True,
+            hide_index=True
+        )
+        st.markdown("")
+
 # ═══════════════════════════════════════════════════════════════════════════════
 # PAGE: TAX SUMMARY
 # ═══════════════════════════════════════════════════════════════════════════════
