@@ -868,10 +868,19 @@ elif page == "🚀 IPO Tracker":
                     if status in ['Allotted', 'Listed'] and not ipo.get('pushed_to_transactions'):
                         with action_cols[2]:
                             st.markdown("**Push to Portfolio**")
-                            if st.button(f"➡️ Add to Transactions", key=f"push_{ipo['id']}"):
+                            # Require NSE symbol before pushing
+                            if not ipo.get('stock_symbol'):
+                                nse_sym = st.text_input("NSE Symbol required", 
+                                    placeholder="e.g. HORIZONIND",
+                                    key=f"sym_{ipo['id']}")
+                                if nse_sym and st.button("Save Symbol", key=f"savesym_{ipo['id']}"):
+                                    db_update('ipo_tracker', {'stock_symbol': nse_sym.upper()}, 'id', ipo['id'])
+                                    # Also fix holdings and transactions if already pushed
+                                    st.rerun()
+                            elif st.button(f"➡️ Add to Transactions", key=f"push_{ipo['id']}"):
                                 shares = ipo.get('shares_allotted') or 0
                                 price = ipo.get('allotment_price') or 0
-                                symbol = ipo.get('stock_symbol') or ipo['company_name']
+                                symbol = ipo.get('stock_symbol')
                                 if shares > 0 and price > 0:
                                     charges = calculate_charges('BUY', shares, price)
                                     record = {
