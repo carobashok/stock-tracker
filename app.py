@@ -148,7 +148,7 @@ with st.sidebar:
     st.markdown("---")
     page = st.radio(
         "Navigate",
-        ["🏠 Dashboard", "➕ Add Transaction", "📋 Transactions", "💼 Holdings", "🧾 Tax Summary", "🚀 IPO Tracker"],
+        ["🏠 Dashboard", "➕ Add Transaction", "📋 Transactions", "💼 Holdings", "🧾 Tax Summary", "🚀 IPO Tracker", "🏦 Fixed Deposits"],
         label_visibility="collapsed"
     )
     st.markdown("---")
@@ -963,3 +963,357 @@ elif page == "🚀 IPO Tracker":
                 db_insert('ipo_tracker', record)
                 st.success(f"✅ IPO application for {company_name} saved!")
                 st.balloons()
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# PAGE: FIXED DEPOSITS
+# ═══════════════════════════════════════════════════════════════════════════════
+elif page == "🏦 Fixed Deposits":
+    st.title("🏦 Fixed Deposits")
+    st.caption("Track all family FDs — maturity, interest, renewal and fund source")
+
+    from math import pow as mpow
+
+    # ── Helpers ───────────────────────────────────────────────────────────────
+    def calc_maturity(principal, rate, start, maturity, fd_type, freq):
+        days = (maturity - start).days
+        years = days / 365
+        if fd_type == 'Cumulative':
+            # Quarterly compounding for cumulative FDs
+            n = 4
+            mat = principal * (1 + rate / (100 * n)) ** (n * years)
+        else:
+            # Simple interest for non-cumulative (interest paid out periodically)
+            mat = principal + (principal * rate * years / 100)
+        return round(mat, 2)
+
+    def interest_earned_to_date(principal, rate, start, fd_type):
+        days = (date.today() - start).days
+        if days <= 0: return 0.0
+        years = days / 365
+        if fd_type == 'Cumulative':
+            n = 4
+            current = principal * (1 + rate / (100 * n)) ** (n * years)
+            return round(current - principal, 2)
+        else:
+            return round(principal * rate * years / 100, 2)
+
+    def fd_status(maturity_date):
+        days_left = (maturity_date - date.today()).days
+        if days_left < 0:   return '🔴 Matured', 'loss'
+        if days_left <= 30: return '🟡 Maturing Soon', 'neutral'
+        return '🟢 Active', 'gain'
+
+    @st.cache_data(ttl=60)
+    def fetch_fds():
+        return db_select('fixed_deposits', order_by='maturity_date.asc')
+
+    def invalidate_fd_cache():
+        fetch_fds.clear()
+
+    RELATIONSHIPS = ['Self', 'Mother', 'Father', 'Wife', 'Husband', 'Son', 'Daughter', 'Other']
+    FD_TYPES = ['Cumulative', 'Non-Cumulative', 'Tax-Saving (80C)', 'Senior Citizen']
+    PAYOUT_FREQ = ['At Maturity', 'Monthly', 'Quarterly', 'Half-Yearly', 'Yearly']
+    FUND_SOURCES = ['Savings', 'Salary', 'Matured FD', 'Stock Sale Proceeds',
+                    'Business Income', 'Gift/Inheritance', 'Rental Income', 'Other']
+
+    tab1, tab2, tab3 = st.tabs(["📋 My FDs", "➕ Add FD", "📊 FD Summary"])
+
+    # ── TAB 1: MY FDs ─────────────────────────────────────────────────────────
+    with tab1:
+        fds = fetch_fds()
+
+        if not fds:
+            st.info("No FDs added yet. Go to 'Add FD' tab to get started.")
+        else:
+            # Filter by holder
+            holders = ['All'] + sorted(set(f['holder_name'] for f in fds))
+            col_f1, col_f2 = st.columns([1, 3])
+            with col_f1:
+                sel_holder = st.selectbox("Filter by Holder", holders)
+
+            filtered_fds = fds if sel_holder == 'All' else [f for f in fds if f['holder_name'] == sel_holder]
+
+            # Summary metrics
+            total_principal = sum(float(f['principal']) for f in filtered_fds)
+            total_maturity = sum(
+                calc_maturity(float(f['principal']), float(f['interest_rate']),
+                              datetime.strptime(f['start_date'], '%Y-%m-%d').date(),
+                              datetime.strptime(f['maturity_date'], '%Y-%m-%d').date(),
+                              f['fd_type'], f['payout_frequency'])
+                for f in filtered_fds
+            )
+            total_interest = total_maturity - total_principal
+            total_earned = sum(
+                interest_earned_to_date(float(f['principal']), float(f['interest_rate']),
+                                        datetime.strptime(f['start_date'], '%Y-%m-%d').date(),
+                                        f['fd_type'])
+                for f in filtered_fds
+            )
+
+            c1, c2, c3, c4 = st.columns(4)
+            metric_card(c1, "Total Principal", fmt_inr(total_principal))
+            metric_card(c2, "Total at Maturity", fmt_inr(total_maturity))
+            metric_card(c3, "Total Interest", fmt_inr(total_interest), "on maturity", "gain")
+            metric_card(c4, "Interest Earned Till Date", fmt_inr(total_earned), "accrued", "gain")
+
+            st.markdown("<br>", unsafe_allow_html=True)
+
+            # FD Cards
+            for f in filtered_fds:
+                start_dt = datetime.strptime(f['start_date'], '%Y-%m-%d').date()
+                mat_dt = datetime.strptime(f['maturity_date'], '%Y-%m-%d').date()
+                principal = float(f['principal'])
+                rate = float(f['interest_rate'])
+                mat_amount = calc_maturity(principal, rate, start_dt, mat_dt, f['fd_type'], f['payout_frequency'])
+                earned = interest_earned_to_date(principal, rate, start_dt, f['fd_type'])
+                status_label, status_cls = fd_status(mat_dt)
+                days_left = (mat_dt - date.today()).days
+
+                with st.expander(
+                    f"{status_label}  |  {f['bank_name']}  —  {f['holder_name']} ({f['relationship']})  —  {fmt_inr(principal)} @ {rate}%",
+                    expanded=(days_left <= 30)
+                ):
+                    col1, col2, col3 = st.columns(3)
+
+                    with col1:
+                        st.markdown("**FD Details**")
+                        st.write(f"FD Number: {f.get('fd_number') or '—'}")
+                        st.write(f"Holder: {f['holder_name']} ({f['relationship']})")
+                        st.write(f"Type: {f['fd_type']}")
+                        st.write(f"Payout: {f['payout_frequency']}")
+                        st.write(f"Source of Funds: {f.get('source_of_funds') or '—'}")
+                        flags = []
+                        if f.get('is_senior_citizen'): flags.append("👴 Senior Citizen")
+                        if f.get('is_tax_saving'):     flags.append("💰 Tax Saving 80C")
+                        if f.get('auto_renewal'):      flags.append("🔄 Auto Renewal")
+                        if f.get('tds_applicable'):    flags.append("📋 TDS Applicable")
+                        if flags: st.write(" | ".join(flags))
+
+                    with col2:
+                        st.markdown("**Timeline**")
+                        st.write(f"Start Date: {start_dt.strftime('%d-%b-%Y')}")
+                        st.write(f"Maturity Date: {mat_dt.strftime('%d-%b-%Y')}")
+                        tenure_days = (mat_dt - start_dt).days
+                        st.write(f"Tenure: {tenure_days} days ({round(tenure_days/365, 1)} yrs)")
+                        if days_left >= 0:
+                            st.write(f"Days Remaining: {days_left} days")
+                        else:
+                            st.write(f"Matured {abs(days_left)} days ago")
+
+                    with col3:
+                        st.markdown("**Returns**")
+                        st.write(f"Principal: {fmt_inr(principal)}")
+                        st.write(f"Maturity Amount: {fmt_inr(mat_amount)}")
+                        st.write(f"Total Interest: {fmt_inr(mat_amount - principal)}")
+                        st.write(f"Interest Earned Till Date: {fmt_inr(earned)}")
+                        st.write(f"Effective Yield: {rate}% p.a.")
+                        if f.get('notes'):
+                            st.caption(f"📝 {f['notes']}")
+
+                    # Actions
+                    st.markdown("---")
+                    act1, act2, act3 = st.columns(3)
+
+                    with act1:
+                        if st.button("✏️ Mark Renewed", key=f"renew_{f['id']}"):
+                            db_update('fixed_deposits', {'status': 'Renewed'}, 'id', f['id'])
+                            invalidate_fd_cache()
+                            st.success("Marked as renewed.")
+                            st.rerun()
+
+                    with act2:
+                        if st.button("✅ Mark Matured", key=f"mature_{f['id']}"):
+                            db_update('fixed_deposits', {'status': 'Matured'}, 'id', f['id'])
+                            invalidate_fd_cache()
+                            st.success("Marked as matured.")
+                            st.rerun()
+
+                    with act3:
+                        if st.button("🗑️ Delete", key=f"del_fd_{f['id']}"):
+                            db_delete('fixed_deposits', 'id', f['id'])
+                            invalidate_fd_cache()
+                            st.success("Deleted.")
+                            st.rerun()
+
+    # ── TAB 2: ADD FD ─────────────────────────────────────────────────────────
+    with tab2:
+        st.subheader("Add New Fixed Deposit")
+
+        col1, col2 = st.columns(2)
+        with col1:
+            bank_name = st.text_input("Bank / NBFC Name", placeholder="e.g. SBI, HDFC Bank, Bajaj Finance")
+            fd_number = st.text_input("FD Number / Reference", placeholder="e.g. FD00123456")
+            holder_name = st.text_input("Account Holder Name", placeholder="e.g. Ashok, Mother's name")
+            relationship = st.selectbox("Relationship", RELATIONSHIPS)
+            source_of_funds = st.selectbox("Source of Funds", FUND_SOURCES)
+            nominee = st.text_input("Nominee", placeholder="e.g. Wife")
+            notes = st.text_area("Notes", placeholder="Any additional details", height=80)
+
+        with col2:
+            principal = st.number_input("Principal Amount (₹)", min_value=1000.0, step=1000.0)
+            interest_rate = st.number_input("Interest Rate (% p.a.)", min_value=0.1, max_value=15.0,
+                                             value=7.0, step=0.05, format="%.2f")
+            fd_type = st.selectbox("FD Type", FD_TYPES)
+            payout_freq = st.selectbox("Payout Frequency", PAYOUT_FREQ)
+            start_date = st.date_input("Start Date", value=date.today())
+            maturity_date = st.date_input("Maturity Date")
+
+            # Flags
+            col_f1, col_f2 = st.columns(2)
+            with col_f1:
+                is_senior = st.checkbox("Senior Citizen Rate")
+                is_tax_saving = st.checkbox("Tax Saving (80C)")
+            with col_f2:
+                auto_renewal = st.checkbox("Auto Renewal")
+                tds_applicable = st.checkbox("TDS Applicable", value=True)
+
+            # Preview
+            if principal > 0 and maturity_date > start_date:
+                mat_amt = calc_maturity(principal, interest_rate, start_date, maturity_date, fd_type, payout_freq)
+                tenure = (maturity_date - start_date).days
+                st.markdown(f"""
+| | |
+|---|---|
+| Tenure | {tenure} days ({round(tenure/365,1)} yrs) |
+| Maturity Amount | {fmt_inr(mat_amt)} |
+| Total Interest | {fmt_inr(mat_amt - principal)} |
+| Effective Gain | {round((mat_amt-principal)/principal*100, 2)}% |
+""")
+
+        if st.button("✅ Save FD", type="primary", use_container_width=True):
+            if not bank_name or not holder_name:
+                st.error("Bank name and holder name are required.")
+            elif maturity_date <= start_date:
+                st.error("Maturity date must be after start date.")
+            else:
+                mat_amt = calc_maturity(principal, interest_rate, start_date, maturity_date, fd_type, payout_freq)
+                record = {
+                    'bank_name': bank_name,
+                    'fd_number': fd_number or None,
+                    'holder_name': holder_name,
+                    'relationship': relationship,
+                    'principal': principal,
+                    'interest_rate': interest_rate,
+                    'fd_type': fd_type,
+                    'payout_frequency': payout_freq,
+                    'start_date': start_date.isoformat(),
+                    'maturity_date': maturity_date.isoformat(),
+                    'maturity_amount': mat_amt,
+                    'auto_renewal': auto_renewal,
+                    'is_senior_citizen': is_senior,
+                    'is_tax_saving': is_tax_saving,
+                    'tds_applicable': tds_applicable,
+                    'source_of_funds': source_of_funds,
+                    'nominee': nominee or None,
+                    'notes': notes or None,
+                    'status': 'Active',
+                }
+                db_insert('fixed_deposits', record)
+                invalidate_fd_cache()
+                st.success(f"✅ FD of {fmt_inr(principal)} at {interest_rate}% saved for {holder_name}!")
+                st.balloons()
+
+    # ── TAB 3: FD SUMMARY ─────────────────────────────────────────────────────
+    with tab3:
+        st.subheader("Family FD Summary")
+        fds = fetch_fds()
+
+        if not fds:
+            st.info("No FDs added yet.")
+        else:
+            # By holder
+            st.markdown("#### By Holder")
+            holder_summary = {}
+            for f in fds:
+                h = f['holder_name']
+                start_dt = datetime.strptime(f['start_date'], '%Y-%m-%d').date()
+                mat_dt = datetime.strptime(f['maturity_date'], '%Y-%m-%d').date()
+                principal = float(f['principal'])
+                rate = float(f['interest_rate'])
+                mat_amt = calc_maturity(principal, rate, start_dt, mat_dt, f['fd_type'], f['payout_frequency'])
+                earned = interest_earned_to_date(principal, rate, start_dt, f['fd_type'])
+
+                if h not in holder_summary:
+                    holder_summary[h] = {'relationship': f['relationship'], 'principal': 0,
+                                         'maturity': 0, 'earned': 0, 'count': 0}
+                holder_summary[h]['principal'] += principal
+                holder_summary[h]['maturity'] += mat_amt
+                holder_summary[h]['earned'] += earned
+                holder_summary[h]['count'] += 1
+
+            holder_rows = []
+            for holder, s in holder_summary.items():
+                holder_rows.append({
+                    'Holder': holder,
+                    'Relationship': s['relationship'],
+                    'No. of FDs': s['count'],
+                    'Total Principal (₹)': round(s['principal'], 2),
+                    'Total at Maturity (₹)': round(s['maturity'], 2),
+                    'Total Interest (₹)': round(s['maturity'] - s['principal'], 2),
+                    'Earned Till Date (₹)': round(s['earned'], 2),
+                })
+            st.dataframe(pd.DataFrame(holder_rows), use_container_width=True, hide_index=True)
+
+            # By bank
+            st.markdown("#### By Bank")
+            bank_summary = {}
+            for f in fds:
+                b = f['bank_name']
+                principal = float(f['principal'])
+                if b not in bank_summary:
+                    bank_summary[b] = {'principal': 0, 'count': 0}
+                bank_summary[b]['principal'] += principal
+                bank_summary[b]['count'] += 1
+
+            bank_rows = [{'Bank': b, 'No. of FDs': s['count'],
+                          'Total Principal (₹)': round(s['principal'], 2)}
+                         for b, s in sorted(bank_summary.items(), key=lambda x: -x[1]['principal'])]
+            st.dataframe(pd.DataFrame(bank_rows), use_container_width=True, hide_index=True)
+
+            # By type
+            st.markdown("#### By FD Type")
+            type_summary = {}
+            for f in fds:
+                t = f['fd_type']
+                principal = float(f['principal'])
+                if t not in type_summary:
+                    type_summary[t] = {'principal': 0, 'count': 0}
+                type_summary[t]['principal'] += principal
+                type_summary[t]['count'] += 1
+
+            type_rows = [{'FD Type': t, 'No. of FDs': s['count'],
+                          'Total Principal (₹)': round(s['principal'], 2)}
+                         for t, s in type_summary.items()]
+            st.dataframe(pd.DataFrame(type_rows), use_container_width=True, hide_index=True)
+
+            # Overall family wealth
+            st.markdown("---")
+            st.markdown("#### 💰 Overall Family Investment Summary")
+            txns = fetch_transactions()
+            equity_holdings = compute_holdings_from_transactions(txns)
+            holdings_meta_fd = fetch_holdings_meta()
+
+            total_equity = sum(
+                h['qty'] * float(holdings_meta_fd.get(s, {}).get('cmp') or h['avg_cost'])
+                for s, h in equity_holdings.items()
+            )
+            total_equity_invested = sum(h['total_cost'] for h in equity_holdings.values())
+            total_fd_principal = sum(float(f['principal']) for f in fds)
+            total_fd_maturity = sum(
+                calc_maturity(float(f['principal']), float(f['interest_rate']),
+                              datetime.strptime(f['start_date'], '%Y-%m-%d').date(),
+                              datetime.strptime(f['maturity_date'], '%Y-%m-%d').date(),
+                              f['fd_type'], f['payout_frequency'])
+                for f in fds
+            )
+            grand_total = total_equity + total_fd_principal
+
+            w1, w2, w3, w4 = st.columns(4)
+            metric_card(w1, "Equity (Current Value)", fmt_inr(total_equity),
+                        f"Invested: {fmt_inr(total_equity_invested)}", "gain")
+            metric_card(w2, "Fixed Deposits", fmt_inr(total_fd_principal),
+                        f"At Maturity: {fmt_inr(total_fd_maturity)}", "gain")
+            metric_card(w3, "Total Family Wealth", fmt_inr(grand_total), "Equity + FD", "neutral")
+            metric_card(w4, "FD % of Portfolio",
+                        f"{round(total_fd_principal/grand_total*100, 1)}%" if grand_total else "—",
+                        "allocation", "neutral")
