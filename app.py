@@ -311,7 +311,15 @@ elif page == "➕ Add Transaction":
             import io
             df_csv = pd.read_csv(uploaded_csv)
             df_csv.columns = df_csv.columns.str.strip()
-            df_csv['Date'] = pd.to_datetime(df_csv['Date'].str.strip(), format="%d-%b-%Y")
+            def _parse_date_flex(d):
+                d = str(d).strip()
+                for fmt in ["%d-%b-%Y", "%d-%b-%y", "%d/%m/%Y", "%d-%m-%Y", "%Y-%m-%d"]:
+                    try:
+                        return pd.to_datetime(d, format=fmt)
+                    except Exception:
+                        continue
+                return pd.to_datetime(d, dayfirst=True)   # last-resort auto-detect
+            df_csv['Date'] = df_csv['Date'].astype(str).apply(_parse_date_flex)
 
             SYMBOL_MAP = {
                 "JIOFIN":"JIOFIN","DELLIM":"DELHIVERY","LTFINA":"LTF",
@@ -1141,7 +1149,17 @@ elif page == "🏦 Fixed Deposits":
 
         col1, col2 = st.columns(2)
         with col1:
-            bank_name = st.text_input("Bank / NBFC Name", placeholder="e.g. SBI, HDFC Bank, Bajaj Finance")
+            COMMON_BANKS = sorted([
+                'Bank of Baroda', 'Bank of India', 'Canara Bank', 'Central Bank of India',
+                'City Union Bank', 'Federal Bank', 'HDFC Bank', 'ICICI Bank', 'IDBI Bank',
+                'IDFC First Bank', 'Indian Bank', 'Indian Overseas Bank', 'IndusInd Bank',
+                'Karur Vysya Bank', 'Kotak Mahindra Bank', 'Punjab National Bank',
+                'South Indian Bank', 'State Bank of India', 'Tamil Nadu Mercantile Bank',
+                'UCO Bank', 'Union Bank of India', 'Yes Bank',
+                'Bajaj Finance', 'Mahindra Finance', 'Shriram Finance', 'Other'
+            ])
+            bank_select = st.selectbox("Bank / NBFC Name", COMMON_BANKS)
+            bank_name = bank_select if bank_select != 'Other' else st.text_input("Enter Bank Name").strip().title()
             fd_number = st.text_input("FD Number / Reference", placeholder="e.g. FD00123456")
             holder_name = st.text_input("Account Holder Name", placeholder="e.g. Ashok, Mother's name")
             relationship = st.selectbox("Relationship", RELATIONSHIPS)
@@ -1188,7 +1206,7 @@ elif page == "🏦 Fixed Deposits":
             else:
                 mat_amt = calc_maturity(principal, interest_rate, start_date, maturity_date, fd_type, payout_freq)
                 record = {
-                    'bank_name': bank_name,
+                    'bank_name': bank_name.strip().title(),
                     'fd_number': fd_number or None,
                     'holder_name': holder_name,
                     'relationship': relationship,
@@ -1258,7 +1276,7 @@ elif page == "🏦 Fixed Deposits":
             st.markdown("#### By Bank")
             bank_summary = {}
             for f in fds:
-                b = f['bank_name']
+                b = f['bank_name'].strip().title()
                 principal = float(f['principal'])
                 if b not in bank_summary:
                     bank_summary[b] = {'principal': 0, 'count': 0}

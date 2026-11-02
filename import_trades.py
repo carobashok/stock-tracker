@@ -28,7 +28,15 @@ SYMBOL_MAP = {
 }
 
 def parse_date(d):
-    return datetime.strptime(d.strip(), "%d-%b-%Y").date().isoformat()
+    d = str(d).strip()
+    for fmt in ["%d-%b-%Y", "%d-%b-%y", "%d/%m/%Y", "%d-%m-%Y", "%Y-%m-%d"]:
+        try:
+            return datetime.strptime(d, fmt).date().isoformat()
+        except ValueError:
+            continue
+    # last-resort: let dateutil parse it
+    from dateutil import parser as dateutil_parser
+    return dateutil_parser.parse(d, dayfirst=True).date().isoformat()
 
 def insert_batch(records):
     headers = {
