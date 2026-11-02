@@ -335,12 +335,13 @@ elif page == "➕ Add Transaction":
                 qty_val = int(row['Qty'])
                 price_val = float(row['Price'])
                 trade_val = float(row['Trade Value'])
-                stt_val = float(str(row['STT']).strip() or 0)
-                sebi_val = float(str(row['Transaction and SEBI Turnover charges']).strip() or 0)
-                stamp_val = float(str(row['Stamp Duty']).strip() or 0)
+                stt_val = float(str(row.get('STT', 0) or 0))
+                sebi_val = float(str(row.get('Transaction and SEBI Turnover charges', '') or row.get('SEBI Turnover charges', '') or '').strip() or 0)
+                stamp_val = float(str(row.get('Stamp Duty', 0) or 0))
                 # ICICI formula: STT + SEBI + Stamp Duty + (Brokerage + Service Tax)
                 brokerage = float(str(row.get('Brokerage + Service Tax', '') or '').strip() or 0)
-                brokerage_incl = float(str(row['Brokerage incl. taxes']).strip() or 0)
+                # 'Brokerage incl. taxes' column is optional — use .get() to avoid KeyError
+                brokerage_incl = float(str(row.get('Brokerage incl. taxes', '') or row.get('Brokerage incl taxes', '') or '').strip() or 0)
                 total_charges = stt_val + sebi_val + stamp_val + brokerage
                 landed = trade_val + total_charges if action_val == 'BUY' else trade_val - total_charges
                 eff_price = landed / qty_val
